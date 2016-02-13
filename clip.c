@@ -3,16 +3,17 @@
 #include <string.h>
 #include <limits.h>
 
-#include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
-typedef struct {
+#include "miniclip-xcb.h"
+
+struct clip_t {
   xcb_connection_t* xcb;
   xcb_window_t w;
   xcb_atom_t clipboard;
   xcb_atom_t target;
   uint8_t xfixes_event;
-} clip_t;
+};
 
 static int get_selection(clip_t* clip, char* out, size_t* size);
 static int process_event(clip_t* clip, xcb_generic_event_t* e,
@@ -22,9 +23,15 @@ static int register_clipboard_events(clip_t* clip,
     xcb_xfixes_query_version_cookie_t xfixes_version_cookie);
 
 
-int clip_init(clip_t* clip) {
+clip_t* clip_init(void) {
+  clip_t* clip;
+
   int screen_num;
   xcb_xfixes_query_version_cookie_t xfixes_version_cookie;
+
+  clip = malloc(sizeof(clip_t));
+  if (!clip)
+    return NULL;
 
   clip->xcb = xcb_connect(NULL, &screen_num);
 
@@ -41,15 +48,17 @@ int clip_init(clip_t* clip) {
   if (register_clipboard_events(clip, xfixes_version_cookie) == -1)
     goto failure;
 
-  return 0;
+  return clip;
 
 failure:
   xcb_disconnect(clip->xcb);
-  return -1;
+  free(clip);
+  return NULL;
 }
 
 void clip_uninit(clip_t* clip) {
   xcb_disconnect(clip->xcb);
+  free(clip);
 }
 int clip_poll(clip_t* clip, char* out, size_t* size) {
   xcb_generic_event_t* e;
@@ -106,32 +115,6 @@ int clip_wait(clip_t* clip, char* out, size_t* size) {
 int clip_check_error(clip_t* clip) {
   if (xcb_connection_has_error(clip->xcb))
     return -1;
-
-  return 0;
-}
-
-int main(void) {
-  clip_t clip;
-  char buf[1024*1024*4];
-  size_t size;
-
-  if (clip_init(&clip)) {
-    printf("init failure\n");
-    return -1;
-  }
-
-  for (;;) {
-    size = sizeof buf;
-    if (clip_wait(&clip, buf, &size) == -1) {
-      printf("failure");
-      clip_uninit(&clip);
-      return -1;
-    }
-
-    printf("saw: %.*s\n", (int) (size & INT_MAX), buf);
-  }
-
-  clip_uninit(&clip);
 
   return 0;
 }
